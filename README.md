@@ -1,5 +1,5 @@
 # jester 
 
-Jai game library for [simplicity-oriented programming](https://oliverdzedou.com/simplicity_oriented_programming)
+## ! EARLY WORK IN PROGRESS !
 
-WORK IN PROGRESS
+Jai game library based on Vulkan intented for [simplicity-oriented programmers](https://oliverdzedou.com/simplicity_oriented_programming)
