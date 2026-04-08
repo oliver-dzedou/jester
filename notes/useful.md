@@ -1,0 +1,4 @@
+- https://www.howtovulkan.com/#instance-setup
+- https://github.com/stevelittlefish/odin_vulkan_sprite_renderer/tree/d2485d4826f2929fe5125011fad536064da909e2 (similar enough)
+- Vulkan/example.jai in the compiler examples
+- https://www.forrestthewoods.com/blog/learning-jai-via-advent-of-code/
