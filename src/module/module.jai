@@ -5,6 +5,7 @@
 #if OS == .WINDOWS {
     #import "Windows"; 
 } else #if OS == .LINUX {
+    #import "X11";
     #import "POSIX";
     #import "Linux";
 }
@@ -18,11 +19,12 @@ VK_VALIDATION_LAYER :: "VK_LAYER_KHRONOS_validation";
 VK_DEBUG_EXTENSION :: "VK_EXT_debug_utils";
 VK_KHR_SURFACE_EXTENSION :: "VK_KHR_surface";
 VK_KHR_WIN32_SURFACE_EXTENSION :: "VK_KHR_win32_surface";
+VK_KHR_X11_SURFACE_EXTENSION :: "VK_KHR_xlib_surface";
 VK_CREATE_DEBUG_UTILS_MESSENGER :: "vkCreateDebugUtilsMessengerEXT";
 VK_DESTROY_DEBUG_UTILS_MESSENGER :: "vkDestroyDebugUtilsMessengerEXT";
 #if OS == .WINDOWS {
     VK_DLL :: "vulkan-1.dll";
-} else #if OS == .WINDOWS {
+} else #if OS == .LINUX {
     VK_DLL :: "libvulkan.so.1";
 }
 // @NOTE: all of these are arbitrary
@@ -88,7 +90,6 @@ init :: (window_width: int, window_height: int, app_name: string) {
                         log("VK_VALIDATION_LAYER: %", to_string(pCallbackData.pMessage));
                     }
                 }
-            
             return VK_FALSE;
         }
         add_layer_or_extension(layers, *layer_count, VK_VALIDATION_LAYER);
@@ -101,9 +102,11 @@ init :: (window_width: int, window_height: int, app_name: string) {
         };
     }
 
+    add_layer_or_extension(extensions, *extension_count, VK_KHR_SURFACE_EXTENSION);
     #if OS == .WINDOWS {
-        add_layer_or_extension(extensions, *extension_count, VK_KHR_SURFACE_EXTENSION);
         add_layer_or_extension(extensions, *extension_count, VK_KHR_WIN32_SURFACE_EXTENSION);
+    } else #if OS == .LINUX {
+        add_layer_or_extension(extensions, *extension_count, VK_KHR_X11_SURFACE_EXTENSION);
     }
 
     create_info: VkInstanceCreateInfo;
@@ -130,11 +133,9 @@ init :: (window_width: int, window_height: int, app_name: string) {
         vk_check(vkCreateWin32SurfaceKHR(instance, *surface_create_info, null, *surface));
     } else #if OS == .LINUX { 
         surface_create_info: VkXlibSurfaceCreateInfoKHR;
-        surface_create_info.display = XOpenDisplay(null);
+        surface_create_info.dpy = XOpenDisplay(null);
         surface_create_info.window = window;
         vk_check(vkCreateXlibSurfaceKHR(instance, *surface_create_info, null, *surface));
-    } else {
-        #assert(false, tprint("% is not supported", OS));
     }
 
     device_list: [VK_MAX_DEVICE_COUNT]VkPhysicalDevice;
