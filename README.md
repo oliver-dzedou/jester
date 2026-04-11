@@ -1,5 +1,5 @@
-# jester v0.1.1
+# jester v0.1.2
 
-## ! EARLY WORK IN PROGRESS !
+## !EARLY WORK IN PROGRESS!
 
-Jai game library based on Vulkan intended for [simplicity-oriented programming](https://oliverdzedou.com/simplicity_oriented_programming)
+Jai game library based on Vulkan
