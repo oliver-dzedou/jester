@@ -1,7 +1,14 @@
 #import "Basic";
-using #import "Vulkan";
+#import "Vulkan";
+#import "Window_Creation";
+#import "Input";
+#if OS == .WINDOWS {
+    #import "Windows"; 
+} else #if OS == .LINUX {
+    #import "Linux";
+}
 
-#module_parameters(DEBUG := false);
+#module_parameters(DEBUG := false); // @TODO: this should be a CLI argument
 
 #scope_file
 
@@ -10,45 +17,70 @@ VK_MINOR_VERSION :: 4;
 VK_PATCH_VERSION :: 341;
 VK_VALIDATION_LAYER :: "VK_LAYER_KHRONOS_validation";
 VK_DEBUG_EXTENSION :: "VK_EXT_debug_utils";
-VK_DEBUG_UTILS_MESSENGER :: "vkCreateDebugUtilsMessengerEXT";
+VK_KHR_SURFACE_EXTENSION :: "VK_KHR_surface";
+VK_KHR_WIN32_SURFACE_EXTENSION :: "VK_KHR_win32_surface";
+VK_CREATE_DEBUG_UTILS_MESSENGER :: "vkCreateDebugUtilsMessengerEXT";
+VK_DESTROY_DEBUG_UTILS_MESSENGER :: "vkDestroyDebugUtilsMessengerEXT";
+
+// @NOTE: all of these are arbitrary
+VK_MAX_LAYER_COUNT :: 8;
+VK_MAX_EXTENSION_COUNT :: 8;
+VK_MAX_DEVICE_COUNT :: 8;
+VK_MAX_QUEUE_FAMILY_COUNT :: 8;
+
+instance: VkInstance;
+device: VkPhysicalDevice;
+window: Window_Type;
+surface: VkSurfaceKHR;
+
+#if DEBUG {
+    debug_messenger: VkDebugUtilsMessengerEXT;
+}
 
 vk_check :: (result: VkResult) {
     assert(result == .SUCCESS, "VK_ERROR: %", result);
 }
 
-debug_callback :: (
-        messageSeverity: VkDebugUtilsMessageSeverityFlagBitsEXT, 
-        messageType: VkDebugUtilsMessageTypeFlagsEXT, 
-        pCallbackData: *VkDebugUtilsMessengerCallbackDataEXT, 
-        pUserData: *void
-    ) -> VkBool32 #c_call {
-        if messageSeverity > .INFO_BIT_EXT {
-            push_context {
-                log("VK_VALIDATION_LAYER: %", to_string(pCallbackData.pMessage));
-            }
-        }
-    
-    return VK_FALSE;
-}
-
 #scope_export
 
 init :: () {
-    assert(vkCreateInstance != null, "vkCreateInstance is null pointer");
-    
+    window = create_window(700, 700, "jester"); // @TODO this should obviously be configurable
+
     app_info := VkApplicationInfo.{
         sType = .APPLICATION_INFO,
         apiVersion = VK_MAKE_API_VERSION(0, VK_MAJOR_VERSION, VK_MINOR_VERSION, VK_PATCH_VERSION),
-        pApplicationName = "jester-example",
+        pApplicationName = "jester-example", // @TODO again, should be configurable
         pEngineName = "jester",
     };
 
-    layers: []*u8;
-    extensions: []*u8;
+    layers: [VK_MAX_LAYER_COUNT]*u8;
+    extensions: [VK_MAX_EXTENSION_COUNT]*u8;
+    layer_count: u32;
+    extension_count: u32;
+
+    add_layer_or_extension :: (arr: []*u8, count: *u32, item: *u8) {
+        arr[<<count] = item;
+        <<count += 1;
+    }
+
     debug_create_info: VkDebugUtilsMessengerCreateInfoEXT;
     #if DEBUG {
-        layers = .[VK_VALIDATION_LAYER];
-        extensions = .[VK_DEBUG_EXTENSION];
+        debug_callback :: (
+                messageSeverity: VkDebugUtilsMessageSeverityFlagBitsEXT, 
+                messageType: VkDebugUtilsMessageTypeFlagsEXT, 
+                pCallbackData: *VkDebugUtilsMessengerCallbackDataEXT, 
+                pUserData: *void
+            ) -> VkBool32 #c_call {
+                if messageSeverity > .INFO_BIT_EXT {
+                    push_context {
+                        log("VK_VALIDATION_LAYER: %", to_string(pCallbackData.pMessage));
+                    }
+                }
+            
+            return VK_FALSE;
+        }
+        add_layer_or_extension(layers, *layer_count, VK_VALIDATION_LAYER);
+        add_layer_or_extension(extensions, *extension_count, VK_DEBUG_EXTENSION);
         debug_create_info = VkDebugUtilsMessengerCreateInfoEXT.{
             sType           =  .VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
             messageSeverity =  .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
@@ -56,53 +88,83 @@ init :: () {
             pfnUserCallback = debug_callback,
         };
     }
+
+    #if OS == .WINDOWS {
+        add_layer_or_extension(extensions, *extension_count, VK_KHR_SURFACE_EXTENSION);
+        add_layer_or_extension(extensions, *extension_count, VK_KHR_WIN32_SURFACE_EXTENSION);
+    }
+
     create_info: VkInstanceCreateInfo;
     create_info.sType = .INSTANCE_CREATE_INFO;
     create_info.pApplicationInfo = *app_info;
-    create_info.enabledLayerCount = cast(u32)layers.count;
-    create_info.enabledExtensionCount = cast(u32)extensions.count;
+    create_info.enabledLayerCount = layer_count;
+    create_info.enabledExtensionCount = extension_count;
     create_info.ppEnabledLayerNames = layers.data;
     create_info.ppEnabledExtensionNames = extensions.data;
     create_info.pNext = *debug_create_info;
-    instance: VkInstance;
     vk_check(vkCreateInstance(*create_info, null, *instance));
 
     #if DEBUG {
-        debug_messenger: VkDebugUtilsMessengerEXT;
-        create_debug_messenger := cast(PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, VK_DEBUG_UTILS_MESSENGER);
+        create_debug_messenger := cast(PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, VK_CREATE_DEBUG_UTILS_MESSENGER);
         assert(create_debug_messenger != null, "create_debug_messenger is null pointer");
         vk_check(create_debug_messenger(instance, *debug_create_info, null, *debug_messenger));
     }
 
-    device_count: u32 = 0;
-    vk_check(vkEnumeratePhysicalDevices(instance, *device_count, null));
-    device_list: [..] VkPhysicalDevice;
-    array_resize(*device_list, device_count);
-    defer array_free(device_list);
-    vk_check(vkEnumeratePhysicalDevices(instance, *device_count, device_list.data));
-    device: VkPhysicalDevice;
+    #if OS == .WINDOWS {
+        surface_create_info: VkWin32SurfaceCreateInfoKHR; 
+        surface_create_info.hinstance = GetModuleHandleW(null);
+        surface_create_info.hwnd = window;
+        vk_check(vkCreateWin32SurfaceKHR(instance, *surface_create_info, null, *surface));
+    } else #if OS == .LINUX { 
+        surface_create_info: VkXlibSurfaceCreateInfoKHR;
+        surface_create_info.display = XOpenDisplay(null);
+        surface_create_info.window = window;
+        vk_check(vkCreateXlibSurfaceKHR(instance, *surface_create_info, null, *surface));
+    } else {
+        #assert(false, tprint("% is not supported", OS));
+    }
+
+    device_list: [VK_MAX_DEVICE_COUNT]VkPhysicalDevice;
+    actual_device_count: u32;
+    vk_check(vkEnumeratePhysicalDevices(instance, *actual_device_count, null));
+    vk_check(vkEnumeratePhysicalDevices(instance, *actual_device_count, device_list.data));
+
     desired_device_types :: VkPhysicalDeviceType.[.DISCRETE_GPU, .INTEGRATED_GPU, .VIRTUAL_GPU];
     for desired_device_type: desired_device_types {
-        for device_list {
+        for i: 0..actual_device_count - 1 {
             device_properties := VkPhysicalDeviceProperties2.{
                 sType = .PHYSICAL_DEVICE_PROPERTIES_2,
             };
-            vkGetPhysicalDeviceProperties2(it, *device_properties);
+            vkGetPhysicalDeviceProperties2(device_list[i], *device_properties);
             if device_properties.properties.deviceType == desired_device_type {
-                #if DEBUG {
-                    log(
-                        "INFO: using device \"%\" (%)", 
-                        to_string(device_properties.properties.deviceName.data, device_properties.properties.deviceName.count), device_properties.properties.deviceType
-                    );
+                queue_family_list: [VK_MAX_QUEUE_FAMILY_COUNT]VkQueueFamilyProperties;
+                actual_queue_family_count: u32;
+                vkGetPhysicalDeviceQueueFamilyProperties(device_list[i], *actual_queue_family_count, null);
+                vkGetPhysicalDeviceQueueFamilyProperties(device_list[i], *actual_queue_family_count, queue_family_list.data);
+                for j: 0..actual_queue_family_count - 1 {
+                    if queue_family_list[j].queueFlags & .GRAPHICS_BIT { // @TODO: At some point this should also support compute, but graphics is fine for now
+                        #if DEBUG {
+                            device_name := to_string(device_properties.properties.deviceName.data, device_properties.properties.deviceName.count);
+                            device_type := device_properties.properties.deviceType;
+                            log("INFO: using device \"%\" (%)", device_name, device_type);
+                        }
+                        device = device_list[i];
+                        break desired_device_type;
+                    }
                 }
-                device = it;
-                break desired_device_type;
             }
         }
     }
+
     assert(device != null, "could not find a suitable device");
 }
 
 deinit :: () {
-    
+    #if DEBUG {
+        destroy_debug_messenger := cast(PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, VK_DESTROY_DEBUG_UTILS_MESSENGER);
+        assert(destroy_debug_messenger != null, "create_debug_messenger is null pointer");
+        destroy_debug_messenger(instance, debug_messenger, null);
+    }
+    vkDestroySurfaceKHR(instance, surface, null);
+    vkDestroyInstance(instance, null);
 }
