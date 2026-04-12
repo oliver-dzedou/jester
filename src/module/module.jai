@@ -10,22 +10,21 @@
     #import "Linux";
 }
 
-#module_parameters(DEBUG := false); // @TODO: figure out the idiomatic way of doing this kind of stuff in Jai
+#module_parameters(DEBUG := false, ENFORCE_COMPUTE_CAPABILITIES := false);
 
 #scope_file
 
 VK_API_VERSION :: #run VK_MAKE_API_VERSION(0, 1, 4, 341);
-VK_VALIDATION_LAYER :: "VK_LAYER_KHRONOS_validation";
-VK_DEBUG_EXTENSION :: "VK_EXT_debug_utils";
-VK_KHR_SURFACE_EXTENSION :: "VK_KHR_surface";
-VK_KHR_WIN32_SURFACE_EXTENSION :: "VK_KHR_win32_surface";
-VK_KHR_X11_SURFACE_EXTENSION :: "VK_KHR_xlib_surface";
-VK_CREATE_DEBUG_UTILS_MESSENGER :: "vkCreateDebugUtilsMessengerEXT";
-VK_DESTROY_DEBUG_UTILS_MESSENGER :: "vkDestroyDebugUtilsMessengerEXT";
+
+#if DEBUG {
+    VK_VALIDATION_LAYER :: "VK_LAYER_KHRONOS_validation";
+    VK_CREATE_DEBUG_UTILS_MESSENGER :: "vkCreateDebugUtilsMessengerEXT";
+    VK_DESTROY_DEBUG_UTILS_MESSENGER :: "vkDestroyDebugUtilsMessengerEXT";
+}
 #if OS == .WINDOWS {
-    VK_DLL :: "vulkan-1.dll";
+    VK_LIB :: "vulkan-1.dll";
 } else #if OS == .LINUX {
-    VK_DLL :: "libvulkan.so.1";
+    VK_LIB :: "libvulkan.so.1";
 }
 // @NOTE: all of these are arbitrary
 VK_MAX_LAYER_COUNT :: 8;
@@ -52,9 +51,9 @@ vk_check :: (result: VkResult) {
 
 init :: (window_width: int, window_height: int, app_name: string) {
     #if OS == .WINDOWS {
-        load_vulkan_loader_procedures(LoadLibraryA(VK_DLL) , GetProcAddress);
+        load_vulkan_loader_procedures(LoadLibraryA(VK_LIB) , GetProcAddress);
     } else #if OS == .LINUX {
-        load_vulkan_loader_procedures(dlopen(VK_DLL, RTLD_NOW), dlsym);
+        load_vulkan_loader_procedures(dlopen(VK_LIB, RTLD_NOW), dlsym);
     } else {
         #assert(false, tprint("% is not supported", OS));
     }
@@ -93,7 +92,7 @@ init :: (window_width: int, window_height: int, app_name: string) {
             return VK_FALSE;
         }
         add_layer_or_extension(layers, *layer_count, VK_VALIDATION_LAYER);
-        add_layer_or_extension(extensions, *extension_count, VK_DEBUG_EXTENSION);
+        add_layer_or_extension(extensions, *extension_count, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         debug_create_info = VkDebugUtilsMessengerCreateInfoEXT.{
             sType           =  .VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
             messageSeverity =  .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
@@ -102,11 +101,11 @@ init :: (window_width: int, window_height: int, app_name: string) {
         };
     }
 
-    add_layer_or_extension(extensions, *extension_count, VK_KHR_SURFACE_EXTENSION);
+    add_layer_or_extension(extensions, *extension_count, VK_KHR_SURFACE_EXTENSION_NAME);
     #if OS == .WINDOWS {
-        add_layer_or_extension(extensions, *extension_count, VK_KHR_WIN32_SURFACE_EXTENSION);
+        add_layer_or_extension(extensions, *extension_count, VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
     } else #if OS == .LINUX {
-        add_layer_or_extension(extensions, *extension_count, VK_KHR_X11_SURFACE_EXTENSION);
+        add_layer_or_extension(extensions, *extension_count, VK_KHR_X11_SURFACE_EXTENSION_NAME);
     }
 
     create_info: VkInstanceCreateInfo;
@@ -155,8 +154,14 @@ init :: (window_width: int, window_height: int, app_name: string) {
                 actual_queue_family_count: u32;
                 vkGetPhysicalDeviceQueueFamilyProperties(device_list[i], *actual_queue_family_count, null);
                 vkGetPhysicalDeviceQueueFamilyProperties(device_list[i], *actual_queue_family_count, queue_family_list.data);
+                capabilities: VkQueueFlagBits;
+                #if ENFORCE_COMPUTE_CAPABILITIES {
+                    capabilities = .VK_QUEUE_GRAPHICS_BIT | .VK_QUEUE_COMPUTE_BIT;
+                } else {
+                    capabilities = .VK_QUEUE_GRAPHICS_BIT;
+                }
                 for j: 0..actual_queue_family_count - 1 {
-                    if queue_family_list[j].queueFlags & .VK_QUEUE_GRAPHICS_BIT { // @TODO: At some point there should be a system that allows opting into ensuring compute capabilities as well
+                    if queue_family_list[j].queueFlags & capabilities {
                         #if DEBUG {
                             device_name := to_string(device_properties.properties.deviceName.data, device_properties.properties.deviceName.count);
                             device_type := device_properties.properties.deviceType;

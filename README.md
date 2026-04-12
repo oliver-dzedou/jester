@@ -1,4 +1,4 @@
-# jester v0.1.3
+# jester v0.1.4
 
 ## !EARLY WORK IN PROGRESS!
 
