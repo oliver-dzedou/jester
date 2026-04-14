@@ -26,13 +26,6 @@ VK_API_VERSION :: #run VK_MAKE_API_VERSION(0, 1, 4, 341);
 } else #if OS == .LINUX {
     VK_LIB :: "libvulkan.so.1";
 }
-// @NOTE: all of these are arbitrary
-VK_MAX_LAYER_COUNT :: 8;
-VK_MAX_EXTENSION_COUNT :: 8;
-VK_MAX_DEVICE_COUNT :: 8;
-VK_MAX_QUEUE_FAMILY_COUNT :: 8;
-//
-
 
 instance: VkInstance;
 physical_device: VkPhysicalDevice;
@@ -43,8 +36,8 @@ surface: VkSurfaceKHR;
     debug_messenger: VkDebugUtilsMessengerEXT;
 }
 
-vk_check :: (result: VkResult) {
-    assert(result == .VK_SUCCESS, "VK_ERROR: %", result);
+vk_check :: (result: VkResult, $loc := #caller_location) {
+    assert(result == .VK_SUCCESS, "VK_ERROR: % @ %", result, loc);
 }
 
 #scope_export
@@ -66,15 +59,10 @@ init :: (window_width: int, window_height: int, app_name: string) {
         pEngineName = "jester",
     };
 
-    layers: [VK_MAX_LAYER_COUNT]*u8;
-    extensions: [VK_MAX_EXTENSION_COUNT]*u8;
-    layer_count: u32;
-    extension_count: u32;
-
-    add_layer_or_extension :: (arr: []*u8, count: *u32, item: *u8) {
-        arr[<<count] = item;
-        <<count += 1;
-    }
+    layers: [..]*u8;
+    extensions: [..]*u8;
+    defer array_free(layers);
+    defer array_free(extensions);
 
     debug_create_info: VkDebugUtilsMessengerCreateInfoEXT;
     #if DEBUG {
@@ -91,8 +79,8 @@ init :: (window_width: int, window_height: int, app_name: string) {
                 }
             return VK_FALSE;
         }
-        add_layer_or_extension(layers, *layer_count, VK_VALIDATION_LAYER);
-        add_layer_or_extension(extensions, *extension_count, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        array_add(*layers, VK_VALIDATION_LAYER);
+        array_add(*extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         debug_create_info = VkDebugUtilsMessengerCreateInfoEXT.{
             sType           =  .VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
             messageSeverity =  .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
@@ -101,18 +89,18 @@ init :: (window_width: int, window_height: int, app_name: string) {
         };
     }
 
-    add_layer_or_extension(extensions, *extension_count, VK_KHR_SURFACE_EXTENSION_NAME);
+    array_add(*extensions, VK_KHR_SURFACE_EXTENSION_NAME);
     #if OS == .WINDOWS {
-        add_layer_or_extension(extensions, *extension_count, VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+        array_add(*extensions, VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
     } else #if OS == .LINUX {
-        add_layer_or_extension(extensions, *extension_count, VK_KHR_X11_SURFACE_EXTENSION_NAME);
+        array_add(*extensions, VK_KHR_X11_SURFACE_EXTENSION_NAME);
     }
 
     create_info: VkInstanceCreateInfo;
     create_info.sType = .VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     create_info.pApplicationInfo = *app_info;
-    create_info.enabledLayerCount = layer_count;
-    create_info.enabledExtensionCount = extension_count;
+    create_info.enabledLayerCount = cast(u32)layers.count;
+    create_info.enabledExtensionCount = cast(u32)extensions.count;
     create_info.ppEnabledLayerNames = layers.data;
     create_info.ppEnabledExtensionNames = extensions.data;
     create_info.pNext = *debug_create_info;
@@ -137,9 +125,11 @@ init :: (window_width: int, window_height: int, app_name: string) {
         vk_check(vkCreateXlibSurfaceKHR(instance, *surface_create_info, null, *surface));
     }
 
+    VK_MAX_DEVICE_COUNT :: 8; // @NOTE arbitrary
     device_list: [VK_MAX_DEVICE_COUNT]VkPhysicalDevice;
     actual_device_count: u32;
     vk_check(vkEnumeratePhysicalDevices(instance, *actual_device_count, null));
+    actual_device_count = min(actual_device_count, VK_MAX_DEVICE_COUNT);
     vk_check(vkEnumeratePhysicalDevices(instance, *actual_device_count, device_list.data));
 
     desired_device_types :: VkPhysicalDeviceType.[.VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU, .VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU, .VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU];
@@ -150,9 +140,11 @@ init :: (window_width: int, window_height: int, app_name: string) {
             };
             vkGetPhysicalDeviceProperties2(device_list[i], *device_properties);
             if device_properties.properties.deviceType == desired_device_type {
+                VK_MAX_QUEUE_FAMILY_COUNT :: 8; // @NOTE arbitrary
                 queue_family_list: [VK_MAX_QUEUE_FAMILY_COUNT]VkQueueFamilyProperties;
                 actual_queue_family_count: u32;
                 vkGetPhysicalDeviceQueueFamilyProperties(device_list[i], *actual_queue_family_count, null);
+                actual_queue_family_count = min(actual_queue_family_count, VK_MAX_QUEUE_FAMILY_COUNT);
                 vkGetPhysicalDeviceQueueFamilyProperties(device_list[i], *actual_queue_family_count, queue_family_list.data);
                 capabilities: VkQueueFlagBits;
                 #if ENFORCE_COMPUTE_CAPABILITIES {
