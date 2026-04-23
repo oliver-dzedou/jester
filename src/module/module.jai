@@ -37,7 +37,9 @@ surface: VkSurfaceKHR;
 }
 
 vk_check :: (result: VkResult, $loc := #caller_location) {
-    assert(result == .VK_SUCCESS, "VK_ERROR: % @ %", result, loc);
+    #if DEBUG {
+        assert(result == .VK_SUCCESS, "VK_ERROR: % @ %", result, loc);
+    }
 }
 
 #scope_export
@@ -93,7 +95,7 @@ init :: (window_width: int, window_height: int, app_name: string) {
     #if OS == .WINDOWS {
         array_add(*extensions, VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
     } else #if OS == .LINUX {
-        array_add(*extensions, VK_KHR_X11_SURFACE_EXTENSION_NAME);
+        array_add(*extensions, VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
     }
 
     create_info: VkInstanceCreateInfo;
