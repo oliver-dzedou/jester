@@ -46,3 +46,7 @@ main :: () {
 
 ### 0.1.4
 * Added ENFORCE_COMPUTE_CAPABILITY module parameter (default false)
+
+### 0.1.5
+* Use correct surface extension name for Linux
+* Slightly improved correctness and readability (also got rid of some code that was triggering compiler warnings about the deprecated ``<<`` pointer dereference syntax)
